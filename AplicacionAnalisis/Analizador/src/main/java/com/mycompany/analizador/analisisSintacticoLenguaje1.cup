@@ -1,0 +1,276 @@
+
+package com.mycompany.analizador;
+
+import java_cup.runtime.*;
+import java.util.*;
+
+parser code {:
+    LexerFormulario lexer;
+    private List<ErrorSintactico> erroresSintacticos = new ArrayList<>();
+
+    public parser(LexerFormulario lexer) {
+        super(lexer);
+        this.lexer = lexer;
+    }
+    
+    public LexerFormulario getLexer() {
+        return lexer;
+    }
+
+    public List<ErrorSintactico> getErroresSintacticos() {
+        return erroresSintacticos;
+    }
+
+    @Override
+    public void syntax_error(Symbol cur_token){
+        String lexema = (cur_token.value != null) ? cur_token.value.toString() : symbl_name_from_id(cur_token.sym);
+        
+        int linea = cur_token.left;
+        int columna = cur_token.right;
+        
+        StringBuilder descripcion = new StringBuilder();
+        if( expected_token_ids().isEmpty()  ){
+            descripcion.append("Ya no se esperaba ningun simbolo");
+        } else {
+            descripcion.append("Se esperaba: ");
+            for(Integer expected_token_id : expected_token_ids() ){ 
+                if(!symbl_name_from_id(expected_token_id).equals("error")){
+                    descripcion.append(symbl_name_from_id(expected_token_id));
+                    descripcion.append(" ");
+                }
+            }
+        }
+        
+        erroresSintacticos.add(new ErrorSintactico(lexema, linea, columna, descripcion.toString())); 
+    }
+
+    @Override
+    public void unrecovered_syntax_error(Symbol cur_token){
+        String lexema = (cur_token.value != null) ? cur_token.value.toString() : symbl_name_from_id(cur_token.sym);
+        erroresSintacticos.add(new ErrorSintactico(lexema, cur_token.left, cur_token.right, "Error sintáctico irrecuperable."));
+    }
+:};
+
+
+terminal String SECTION, TABLE, TEXT, OPEN_QUESTION, DROP_QUESTION, SELECT_QUESTION, MULTIPLE_QUESTION;
+
+terminal String WIDTH, HEIGHT, POINTX, POINTY, ORIENTATION, ELEMENTS, STYLES, LABEL, CONTENT, OPTIONS, CORRECT;
+
+terminal String VERTICAL, HORIZONTAL, MONO, SANS_SERIF, CURSIVE, LINE, DOTTED, DOUBLE;
+terminal String RED, BLUE, GREEN, PURPLE, SKY, YELLOW, BLACK, WHITE;
+
+terminal String TYPE_NUMBER, TYPE_STRING, TYPE_SPECIAL, WHO_IS_THAT_POKEMON, DRAW;
+
+terminal String IF, ELSE, WHILE, DO, FOR, IN;
+terminal String COMILLA, TEXTO_PLANO, EMOJI;
+terminal String MAS, MENOS, POR, DIV, POTENCIA, MODULO;
+terminal String MAYOR, MENOR, MAYOR_IGUAL, MENOR_IGUAL, IGUALDAD, DIFERENTE;
+terminal String NOT, AND, OR, ASIGNACION, COMODIN;
+terminal String PAR_IZQ, PAR_DER, COR_IZQ, COR_DER, LLA_IZQ, LLA_DER, COMA, DOS_PUNTOS, PUNTO_COMA, PUNTO;
+
+terminal String NUMBER, IDENTIFICADOR, COLOR_HEX, COLOR_RGB, COLOR_HSL;
+
+terminal UMINUS;
+
+
+non terminal inicio, lista_instrucciones, instruccion;
+non terminal declaracion, asignacion, tipo_dato;
+non terminal estructura_control, if_stmt, while_stmt, do_while_stmt, for_stmt;
+non terminal invocacion_dibujar;
+non terminal componente_ui, lista_atributos, atributo;
+non terminal lista_estilos, atributo_estilo, valor_color;
+non terminal bloque_instrucciones;
+non terminal expresion;
+non terminal lista_comodines; 
+non terminal lista_opciones, lista_respuestas;
+non terminal String cadena_armada, contenido_cadena;
+non terminal lista_elementos_ui;
+
+
+precedence left OR;
+precedence left AND;
+precedence right NOT;
+
+precedence left MAYOR, MENOR, MAYOR_IGUAL, MENOR_IGUAL, IGUALDAD, DIFERENTE;
+
+precedence left MAS, MENOS;
+precedence left POR, DIV, MODULO;
+precedence right POTENCIA;
+precedence left UMINUS; // Resta unaria
+
+
+
+
+start with inicio;
+
+inicio ::= lista_instrucciones 
+        ;
+
+lista_instrucciones ::= lista_instrucciones instruccion 
+                      | instruccion 
+                      ;
+
+instruccion ::= declaracion
+              | asignacion
+              | componente_ui
+              | estructura_control
+              | invocacion_dibujar
+              | error // Permite recuperarse de errores y seguir analizando
+              ;
+
+declaracion ::= tipo_dato IDENTIFICADOR ASIGNACION expresion
+              | tipo_dato IDENTIFICADOR ASIGNACION componente_ui
+              | tipo_dato IDENTIFICADOR
+              ;
+
+asignacion ::= IDENTIFICADOR ASIGNACION expresion
+             | IDENTIFICADOR ASIGNACION componente_ui
+             ;
+
+tipo_dato ::= TYPE_NUMBER | TYPE_STRING | TYPE_SPECIAL ;
+
+cadena_armada ::= COMILLA contenido_cadena:c COMILLA 
+                  {: 
+                      RESULT = c; 
+                  :}
+                | COMILLA COMILLA 
+                  {: 
+                      RESULT = ""; 
+                  :}
+                ;
+
+contenido_cadena ::= contenido_cadena:c TEXTO_PLANO:t 
+                     {: 
+                         RESULT = c + t; 
+                     :}
+                   | contenido_cadena:c EMOJI:e 
+                     {: 
+                         RESULT = c + e; 
+                     :}
+                   | TEXTO_PLANO:t 
+                     {: 
+                         RESULT = t; 
+                     :}
+                   | EMOJI:e 
+                     {: 
+                         RESULT = e; 
+                     :}
+                   ;
+
+expresion ::= expresion MAS expresion
+            | expresion MENOS expresion
+            | expresion POR expresion
+            | expresion DIV expresion
+            | expresion POTENCIA expresion
+            | expresion MODULO expresion
+            | MENOS expresion %prec UMINUS
+            
+            | expresion MAYOR expresion
+            | expresion MENOR expresion
+            | expresion MAYOR_IGUAL expresion
+            | expresion MENOR_IGUAL expresion
+            | expresion IGUALDAD expresion
+            | expresion DIFERENTE expresion
+            
+            | expresion AND expresion
+            | expresion OR expresion
+            | NOT expresion
+            
+            | PAR_IZQ expresion PAR_DER
+            | NUMBER
+            | IDENTIFICADOR
+            | cadena_armada
+            | COMODIN
+            | WHO_IS_THAT_POKEMON PAR_IZQ expresion COMA expresion PAR_DER
+            ;
+
+estructura_control ::= if_stmt
+                     | while_stmt
+                     | do_while_stmt
+                     | for_stmt
+                     ;
+
+bloque_instrucciones ::= LLA_IZQ lista_instrucciones LLA_DER 
+                       | LLA_IZQ LLA_DER
+                       ;
+
+if_stmt ::= IF PAR_IZQ expresion PAR_DER bloque_instrucciones
+          | IF PAR_IZQ expresion PAR_DER bloque_instrucciones ELSE bloque_instrucciones
+          | IF PAR_IZQ expresion PAR_DER bloque_instrucciones ELSE if_stmt
+          ;
+
+while_stmt ::= WHILE PAR_IZQ expresion PAR_DER bloque_instrucciones
+             ;
+
+do_while_stmt ::= DO bloque_instrucciones WHILE PAR_IZQ expresion PAR_DER
+                ;
+
+for_stmt ::= FOR PAR_IZQ IDENTIFICADOR ASIGNACION expresion PUNTO_COMA expresion PUNTO_COMA IDENTIFICADOR ASIGNACION expresion PAR_DER bloque_instrucciones
+           | FOR PAR_IZQ IDENTIFICADOR IN NUMBER PUNTO PUNTO NUMBER PAR_DER bloque_instrucciones
+           ;
+
+componente_ui ::= SECTION COR_IZQ lista_atributos COR_DER
+                | TABLE COR_IZQ lista_atributos COR_DER
+                | TEXT COR_IZQ lista_atributos COR_DER
+                | OPEN_QUESTION COR_IZQ lista_atributos COR_DER
+                | DROP_QUESTION COR_IZQ lista_atributos COR_DER
+                | SELECT_QUESTION COR_IZQ lista_atributos COR_DER
+                | MULTIPLE_QUESTION COR_IZQ lista_atributos COR_DER
+                ;
+
+lista_atributos ::= lista_atributos COMA atributo
+                  | atributo
+                  ;
+
+atributo ::= WIDTH DOS_PUNTOS expresion
+           | HEIGHT DOS_PUNTOS expresion
+           | POINTX DOS_PUNTOS expresion
+           | POINTY DOS_PUNTOS expresion
+           | ORIENTATION DOS_PUNTOS VERTICAL
+           | ORIENTATION DOS_PUNTOS HORIZONTAL
+           | ELEMENTS DOS_PUNTOS LLA_IZQ lista_elementos_ui LLA_DER 
+           | ELEMENTS DOS_PUNTOS LLA_IZQ LLA_DER                   
+           | STYLES COR_IZQ lista_estilos COR_DER
+           | LABEL DOS_PUNTOS expresion
+           | CONTENT DOS_PUNTOS expresion
+           | OPTIONS DOS_PUNTOS LLA_IZQ lista_opciones LLA_DER
+           | OPTIONS DOS_PUNTOS expresion                           
+           | CORRECT DOS_PUNTOS expresion
+           | CORRECT DOS_PUNTOS LLA_IZQ lista_respuestas LLA_DER
+           ;
+
+lista_elementos_ui ::= lista_elementos_ui COMA componente_ui
+                     | componente_ui
+                     ;
+
+lista_opciones ::= lista_opciones COMA cadena_armada
+                 | cadena_armada
+                 ;
+
+lista_respuestas ::= lista_respuestas COMA expresion
+                   | expresion
+                   ;
+
+lista_estilos ::= lista_estilos COMA atributo_estilo
+                | atributo_estilo
+                ;
+
+atributo_estilo ::= cadena_armada DOS_PUNTOS valor_color
+                  | cadena_armada DOS_PUNTOS MONO
+                  | cadena_armada DOS_PUNTOS SANS_SERIF
+                  | cadena_armada DOS_PUNTOS CURSIVE
+                  | cadena_armada DOS_PUNTOS NUMBER
+                  | cadena_armada DOS_PUNTOS PAR_IZQ NUMBER COMA LINE COMA valor_color PAR_DER
+                  | cadena_armada DOS_PUNTOS PAR_IZQ NUMBER COMA DOTTED COMA valor_color PAR_DER
+                  | cadena_armada DOS_PUNTOS PAR_IZQ NUMBER COMA DOUBLE COMA valor_color PAR_DER
+                  ;
+
+valor_color ::= COLOR_HEX | COLOR_RGB | COLOR_HSL | RED | BLUE | GREEN | PURPLE | SKY | YELLOW | BLACK | WHITE ;
+
+invocacion_dibujar ::= IDENTIFICADOR PUNTO DRAW PAR_IZQ PAR_DER
+                     | IDENTIFICADOR PUNTO DRAW PAR_IZQ lista_comodines PAR_DER
+                     ;
+
+lista_comodines ::= lista_comodines COMA expresion
+                  | expresion
+                  ;

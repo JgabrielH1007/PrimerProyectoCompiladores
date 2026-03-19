@@ -1,0 +1,185 @@
+package com.mycompany.analizador.pkm;
+
+import java_cup.runtime.*;
+import java.util.List;
+import java.util.ArrayList;
+import com.mycompany.analizador.ErrorSintactico; 
+
+parser code {:
+    LexerPKM lexer;
+    private List<ErrorSintactico> erroresSintacticos = new ArrayList<>();
+
+    public parser(LexerPKM lexer) {
+        super(lexer);
+        this.lexer = lexer;
+    }
+    
+    public LexerPKM getLexer() {
+        return lexer;
+    }
+
+    public List<ErrorSintactico> getErroresSintacticos() {
+        return erroresSintacticos;
+    }
+
+    @Override
+    public void syntax_error(Symbol cur_token){
+        String lexema = (cur_token.value != null) ? cur_token.value.toString() : symbl_name_from_id(cur_token.sym);
+        erroresSintacticos.add(new ErrorSintactico(lexema, cur_token.left, cur_token.right, "Se esperaba otra etiqueta o valor en PKM.")); 
+    }
+
+    @Override
+    public void unrecovered_syntax_error(Symbol cur_token){
+        String lexema = (cur_token.value != null) ? cur_token.value.toString() : symbl_name_from_id(cur_token.sym);
+        erroresSintacticos.add(new ErrorSintactico(lexema, cur_token.left, cur_token.right, "Error sintáctico irrecuperable en archivo PKM."));
+    }
+:};
+
+terminal String METADATA_SEP, AUTHOR, FECHA, HORA, DESCRIPTION;
+terminal String TOTAL_SECCIONES, TOTAL_PREGUNTAS, ABIERTAS, DESPLEGABLES, SELECCION, MULTIPLES;
+terminal String STYLE, COLOR, BACKGROUND_COLOR, FONT_FAMILY, TEXT_SIZE, BORDER;
+terminal String SECTION, CONTENT, TABLE, LINE, ELEMENT;
+terminal String OPEN, DROP, SELECT, MULTIPLE;
+terminal String MONO, SANS_SERIF, CURSIVE, DOTTED, DOUBLE_STYLE;
+terminal String VERTICAL, HORIZONTAL;
+terminal String MENOR, MAYOR, CIERRE_ETIQUETA, ETIQUETA_AUTOCIERRE, IGUAL, COMA, LLA_IZQ, LLA_DER;
+terminal String VALOR_FECHA, VALOR_HORA, COLORHEX, COLORRGB, COLORHSL, IDENTIFICADOR;
+terminal String COMILLA, TEXTO_PLANO, EMOJI;
+terminal Double NUMERO;
+
+non terminal inicio, metadatos, valor_desc, autor_desc;
+non terminal estilos_bloque, lista_atributos_style, atributo_style;
+non terminal lista_elementos, lista_elementos_validos, elemento, orientacion, tipo_fuente, tipo_borde, valor_color;
+non terminal seccion, tabla, lista_lineas, linea_tabla, lista_celdas, celda;
+non terminal texto_o_abierta, desplegable, seleccion, multiple;
+non terminal lista_opciones, lista_respuestas, respuestas_validas;
+non terminal String cadena_armada, contenido_cadena;
+
+
+inicio ::= metadatos estilos_bloque lista_elementos_validos
+         | metadatos estilos_bloque
+         | metadatos lista_elementos_validos
+         | metadatos
+         ;
+
+cadena_armada ::= COMILLA contenido_cadena:c COMILLA 
+                  {: RESULT = c; :}
+                | COMILLA COMILLA 
+                  {: RESULT = ""; :}
+                ;
+
+contenido_cadena ::= contenido_cadena:c TEXTO_PLANO:t {: RESULT = c + t; :}
+                   | contenido_cadena:c EMOJI:e {: RESULT = c + e; :}
+                   | TEXTO_PLANO:t {: RESULT = t; :}
+                   | EMOJI:e {: RESULT = e; :}
+                   ;
+
+metadatos ::= METADATA_SEP METADATA_SEP 
+              AUTHOR autor_desc
+              FECHA VALOR_FECHA
+              HORA VALOR_HORA
+              DESCRIPTION valor_desc
+              TOTAL_SECCIONES NUMERO
+              TOTAL_PREGUNTAS NUMERO
+              ABIERTAS NUMERO
+              DESPLEGABLES NUMERO
+              SELECCION NUMERO
+              MULTIPLES NUMERO
+            ;
+
+autor_desc ::= IDENTIFICADOR | cadena_armada | /* vacio */ ;
+valor_desc ::= IDENTIFICADOR | cadena_armada | /* vacio */ ;
+
+
+estilos_bloque ::= MENOR STYLE MAYOR lista_atributos_style CIERRE_ETIQUETA STYLE MAYOR ;
+
+lista_atributos_style ::= lista_atributos_style atributo_style
+                        | atributo_style
+                        ;
+
+atributo_style ::= MENOR COLOR IGUAL valor_color ETIQUETA_AUTOCIERRE
+                 | MENOR BACKGROUND_COLOR IGUAL valor_color ETIQUETA_AUTOCIERRE
+                 | MENOR FONT_FAMILY IGUAL tipo_fuente ETIQUETA_AUTOCIERRE
+                 | MENOR TEXT_SIZE IGUAL NUMERO MAYOR 
+                 | MENOR TEXT_SIZE IGUAL NUMERO ETIQUETA_AUTOCIERRE
+                 | MENOR BORDER COMA NUMERO COMA tipo_borde COMA COLOR IGUAL valor_color ETIQUETA_AUTOCIERRE 
+                 ;
+
+valor_color ::= COLORHEX | COLORRGB | COLORHSL | IDENTIFICADOR ; 
+tipo_fuente ::= MONO | SANS_SERIF | CURSIVE ;
+tipo_borde ::= LINE | DOTTED | DOUBLE_STYLE ;
+orientacion ::= VERTICAL | HORIZONTAL ;
+
+
+lista_elementos ::= lista_elementos_validos | /* vacio */ ;
+lista_elementos_validos ::= lista_elementos_validos elemento | elemento ;
+
+elemento ::= seccion
+           | tabla
+           | texto_o_abierta
+           | desplegable
+           | seleccion
+           | multiple
+           ;
+
+// Secciones
+seccion ::= MENOR SECTION IGUAL NUMERO COMA NUMERO COMA NUMERO COMA NUMERO COMA orientacion MAYOR
+            estilos_bloque
+            MENOR CONTENT MAYOR
+            lista_elementos
+            CIERRE_ETIQUETA CONTENT MAYOR
+            CIERRE_ETIQUETA SECTION MAYOR
+          | MENOR SECTION IGUAL NUMERO COMA NUMERO COMA NUMERO COMA NUMERO COMA orientacion MAYOR
+            MENOR CONTENT MAYOR
+            lista_elementos
+            CIERRE_ETIQUETA CONTENT MAYOR
+            CIERRE_ETIQUETA SECTION MAYOR
+          ;
+
+// Tablas
+tabla ::= MENOR TABLE MAYOR
+          estilos_bloque
+          MENOR CONTENT MAYOR
+          lista_lineas
+          CIERRE_ETIQUETA CONTENT MAYOR
+          CIERRE_ETIQUETA TABLE MAYOR
+        | MENOR TABLE MAYOR
+          MENOR CONTENT MAYOR
+          lista_lineas
+          CIERRE_ETIQUETA CONTENT MAYOR
+          CIERRE_ETIQUETA TABLE MAYOR
+        ;
+
+lista_lineas ::= lista_lineas linea_tabla | linea_tabla ;
+linea_tabla ::= MENOR LINE MAYOR lista_celdas CIERRE_ETIQUETA LINE MAYOR ;
+lista_celdas ::= lista_celdas celda | celda ;
+
+celda ::= MENOR ELEMENT MAYOR lista_elementos CIERRE_ETIQUETA ELEMENT MAYOR ;
+
+
+texto_o_abierta ::= MENOR OPEN IGUAL NUMERO COMA NUMERO COMA cadena_armada ETIQUETA_AUTOCIERRE
+                  | MENOR OPEN IGUAL NUMERO COMA NUMERO COMA cadena_armada MAYOR estilos_bloque CIERRE_ETIQUETA OPEN MAYOR
+                  | MENOR OPEN IGUAL NUMERO COMA NUMERO COMA cadena_armada MAYOR CIERRE_ETIQUETA OPEN MAYOR
+                  ;
+
+desplegable ::= MENOR DROP IGUAL NUMERO COMA NUMERO COMA cadena_armada COMA LLA_IZQ lista_opciones LLA_DER COMA NUMERO ETIQUETA_AUTOCIERRE
+              | MENOR DROP IGUAL NUMERO COMA NUMERO COMA cadena_armada COMA LLA_IZQ lista_opciones LLA_DER COMA NUMERO MAYOR estilos_bloque CIERRE_ETIQUETA DROP MAYOR
+              | MENOR DROP IGUAL NUMERO COMA NUMERO COMA cadena_armada COMA LLA_IZQ lista_opciones LLA_DER COMA NUMERO MAYOR CIERRE_ETIQUETA DROP MAYOR
+              ;
+
+seleccion ::= MENOR SELECT IGUAL NUMERO COMA NUMERO COMA cadena_armada COMA LLA_IZQ lista_opciones LLA_DER COMA NUMERO ETIQUETA_AUTOCIERRE
+            | MENOR SELECT IGUAL NUMERO COMA NUMERO COMA cadena_armada COMA LLA_IZQ lista_opciones LLA_DER COMA NUMERO MAYOR estilos_bloque CIERRE_ETIQUETA SELECT MAYOR
+            | MENOR SELECT IGUAL NUMERO COMA NUMERO COMA cadena_armada COMA LLA_IZQ lista_opciones LLA_DER COMA NUMERO MAYOR CIERRE_ETIQUETA SELECT MAYOR
+            ;
+
+multiple ::= MENOR MULTIPLE IGUAL NUMERO COMA NUMERO COMA cadena_armada COMA LLA_IZQ lista_opciones LLA_DER COMA LLA_IZQ lista_respuestas LLA_DER ETIQUETA_AUTOCIERRE
+           | MENOR MULTIPLE IGUAL NUMERO COMA NUMERO COMA cadena_armada COMA LLA_IZQ lista_opciones LLA_DER COMA LLA_IZQ lista_respuestas LLA_DER MAYOR estilos_bloque CIERRE_ETIQUETA MULTIPLE MAYOR
+           | MENOR MULTIPLE IGUAL NUMERO COMA NUMERO COMA cadena_armada COMA LLA_IZQ lista_opciones LLA_DER COMA LLA_IZQ lista_respuestas LLA_DER MAYOR CIERRE_ETIQUETA MULTIPLE MAYOR
+           ;
+
+lista_opciones ::= lista_opciones COMA cadena_armada 
+                 | cadena_armada 
+                 ;
+
+lista_respuestas ::= respuestas_validas | /* vacio */ ;
+respuestas_validas ::= respuestas_validas COMA NUMERO | NUMERO ;
