@@ -1,8 +1,15 @@
-
 package com.mycompany.analizador;
 
 import java_cup.runtime.*;
-import java.util.*;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.Map;
+import java.util.HashMap;
+
+import com.example.compiladoresapp.uitheme.logic.Expresion;
+import com.example.compiladoresapp.uitheme.logic.Instruccion;
+import com.example.compiladoresapp.uitheme.logic.Instruccion.ComponenteUI; 
+import com.mycompany.analizador.ErrorSintactico;
 
 parser code {:
     LexerFormulario lexer;
@@ -24,24 +31,7 @@ parser code {:
     @Override
     public void syntax_error(Symbol cur_token){
         String lexema = (cur_token.value != null) ? cur_token.value.toString() : symbl_name_from_id(cur_token.sym);
-        
-        int linea = cur_token.left;
-        int columna = cur_token.right;
-        
-        StringBuilder descripcion = new StringBuilder();
-        if( expected_token_ids().isEmpty()  ){
-            descripcion.append("Ya no se esperaba ningun simbolo");
-        } else {
-            descripcion.append("Se esperaba: ");
-            for(Integer expected_token_id : expected_token_ids() ){ 
-                if(!symbl_name_from_id(expected_token_id).equals("error")){
-                    descripcion.append(symbl_name_from_id(expected_token_id));
-                    descripcion.append(" ");
-                }
-            }
-        }
-        
-        erroresSintacticos.add(new ErrorSintactico(lexema, linea, columna, descripcion.toString())); 
+        erroresSintacticos.add(new ErrorSintactico(lexema, cur_token.left, cur_token.right, "Se esperaba otro símbolo.")); 
     }
 
     @Override
@@ -51,226 +41,212 @@ parser code {:
     }
 :};
 
-
 terminal String SECTION, TABLE, TEXT, OPEN_QUESTION, DROP_QUESTION, SELECT_QUESTION, MULTIPLE_QUESTION;
-
 terminal String WIDTH, HEIGHT, POINTX, POINTY, ORIENTATION, ELEMENTS, STYLES, LABEL, CONTENT, OPTIONS, CORRECT;
-
 terminal String VERTICAL, HORIZONTAL, MONO, SANS_SERIF, CURSIVE, LINE, DOTTED, DOUBLE;
 terminal String RED, BLUE, GREEN, PURPLE, SKY, YELLOW, BLACK, WHITE;
-
 terminal String TYPE_NUMBER, TYPE_STRING, TYPE_SPECIAL, WHO_IS_THAT_POKEMON, DRAW;
-
 terminal String IF, ELSE, WHILE, DO, FOR, IN;
 terminal String COMILLA, TEXTO_PLANO, EMOJI;
 terminal String MAS, MENOS, POR, DIV, POTENCIA, MODULO;
 terminal String MAYOR, MENOR, MAYOR_IGUAL, MENOR_IGUAL, IGUALDAD, DIFERENTE;
 terminal String NOT, AND, OR, ASIGNACION, COMODIN;
 terminal String PAR_IZQ, PAR_DER, COR_IZQ, COR_DER, LLA_IZQ, LLA_DER, COMA, DOS_PUNTOS, PUNTO_COMA, PUNTO;
-
 terminal String NUMBER, IDENTIFICADOR, COLOR_HEX, COLOR_RGB, COLOR_HSL;
-
 terminal UMINUS;
 
-
-non terminal inicio, lista_instrucciones, instruccion;
-non terminal declaracion, asignacion, tipo_dato;
-non terminal estructura_control, if_stmt, while_stmt, do_while_stmt, for_stmt;
-non terminal invocacion_dibujar;
-non terminal componente_ui, lista_atributos, atributo;
-non terminal lista_estilos, atributo_estilo, valor_color;
-non terminal bloque_instrucciones;
-non terminal expresion;
-non terminal lista_comodines; 
-non terminal lista_opciones, lista_respuestas;
-non terminal String cadena_armada, contenido_cadena;
-non terminal lista_elementos_ui;
-
+non terminal List<Instruccion> inicio, lista_instrucciones, bloque_instrucciones, lista_elementos_ui;
+non terminal Instruccion instruccion, declaracion, asignacion, estructura_control;
+non terminal Instruccion if_stmt, while_stmt, do_while_stmt, for_stmt, invocacion_dibujar;
+non terminal ComponenteUI componente_ui;
+non terminal Expresion expresion;
+non terminal String tipo_dato, cadena_armada, contenido_cadena, valor_color;
+non terminal Map<String, Object> lista_atributos, lista_estilos;
+non terminal Object[] atributo, atributo_estilo; // Retornan arreglos [Clave, Valor]
+non terminal List<Object> lista_opciones, lista_respuestas, lista_comodines;
 
 precedence left OR;
 precedence left AND;
 precedence right NOT;
-
 precedence left MAYOR, MENOR, MAYOR_IGUAL, MENOR_IGUAL, IGUALDAD, DIFERENTE;
-
 precedence left MAS, MENOS;
 precedence left POR, DIV, MODULO;
 precedence right POTENCIA;
-precedence left UMINUS; // Resta unaria
-
-
-
+precedence left UMINUS; 
 
 start with inicio;
 
-inicio ::= lista_instrucciones 
-        ;
 
-lista_instrucciones ::= lista_instrucciones instruccion 
-                      | instruccion 
+inicio ::= lista_instrucciones:lista {: RESULT = lista; :} ;
+
+lista_instrucciones ::= lista_instrucciones:lista instruccion:inst 
+                        {: lista.add(inst); RESULT = lista; :}
+                      | instruccion:inst 
+                        {: List<Instruccion> l = new ArrayList<>(); l.add(inst); RESULT = l; :}
                       ;
 
-instruccion ::= declaracion
-              | asignacion
-              | componente_ui
-              | estructura_control
-              | invocacion_dibujar
-              | error // Permite recuperarse de errores y seguir analizando
+instruccion ::= declaracion:d {: RESULT = d; :}
+              | asignacion:a {: RESULT = a; :}
+              | componente_ui:c {: RESULT = c; :}
+              | estructura_control:e {: RESULT = e; :}
+              | invocacion_dibujar:i {: RESULT = i; :}
+              | error {: RESULT = null; :}
               ;
 
-declaracion ::= tipo_dato IDENTIFICADOR ASIGNACION expresion
-              | tipo_dato IDENTIFICADOR ASIGNACION componente_ui
-              | tipo_dato IDENTIFICADOR
+tipo_dato ::= TYPE_NUMBER {: RESULT = "NUMBER"; :} 
+            | TYPE_STRING {: RESULT = "STRING"; :} 
+            | TYPE_SPECIAL {: RESULT = "SPECIAL"; :} ;
+
+declaracion ::= tipo_dato:t IDENTIFICADOR:id ASIGNACION expresion:e 
+                {: RESULT = new Instruccion.Declaracion(t, id, e); :}
+              | tipo_dato:t IDENTIFICADOR:id ASIGNACION componente_ui:c 
+                {: RESULT = new Instruccion.Declaracion(t, id, c); :}
+              | tipo_dato:t IDENTIFICADOR:id 
+                {: RESULT = new Instruccion.Declaracion(t, id, null); :}
               ;
 
-asignacion ::= IDENTIFICADOR ASIGNACION expresion
-             | IDENTIFICADOR ASIGNACION componente_ui
+asignacion ::= IDENTIFICADOR:id ASIGNACION expresion:e 
+               {: RESULT = new Instruccion.Asignacion(id, e); :}
+             | IDENTIFICADOR:id ASIGNACION componente_ui:c 
+               {: RESULT = new Instruccion.Asignacion(id, c); :}
              ;
 
-tipo_dato ::= TYPE_NUMBER | TYPE_STRING | TYPE_SPECIAL ;
-
-cadena_armada ::= COMILLA contenido_cadena:c COMILLA 
-                  {: 
-                      RESULT = c; 
-                  :}
-                | COMILLA COMILLA 
-                  {: 
-                      RESULT = ""; 
-                  :}
+cadena_armada ::= COMILLA contenido_cadena:c COMILLA {: RESULT = c; :}
+                | COMILLA COMILLA {: RESULT = ""; :}
                 ;
 
-contenido_cadena ::= contenido_cadena:c TEXTO_PLANO:t 
-                     {: 
-                         RESULT = c + t; 
-                     :}
-                   | contenido_cadena:c EMOJI:e 
-                     {: 
-                         RESULT = c + e; 
-                     :}
-                   | TEXTO_PLANO:t 
-                     {: 
-                         RESULT = t; 
-                     :}
-                   | EMOJI:e 
-                     {: 
-                         RESULT = e; 
-                     :}
+contenido_cadena ::= contenido_cadena:c TEXTO_PLANO:t {: RESULT = c + t; :}
+                   | contenido_cadena:c EMOJI:e {: RESULT = c + e; :}
+                   | TEXTO_PLANO:t {: RESULT = t; :}
+                   | EMOJI:e {: RESULT = e; :}
                    ;
 
-expresion ::= expresion MAS expresion
-            | expresion MENOS expresion
-            | expresion POR expresion
-            | expresion DIV expresion
-            | expresion POTENCIA expresion
-            | expresion MODULO expresion
-            | MENOS expresion %prec UMINUS
+expresion ::= expresion:i MAS expresion:d {: RESULT = new Expresion.OperacionAritmetica(i, d, "+"); :}
+            | expresion:i MENOS expresion:d {: RESULT = new Expresion.OperacionAritmetica(i, d, "-"); :}
+            | expresion:i POR expresion:d {: RESULT = new Expresion.OperacionAritmetica(i, d, "*"); :}
+            | expresion:i DIV expresion:d {: RESULT = new Expresion.OperacionAritmetica(i, d, "/"); :}
+            | expresion:i POTENCIA expresion:d {: RESULT = new Expresion.OperacionAritmetica(i, d, "^"); :}
+            | expresion:i MODULO expresion:d {: RESULT = new Expresion.OperacionAritmetica(i, d, "%"); :}
+            | MENOS expresion:e {: RESULT = new Expresion.OperacionAritmetica(new Expresion.Numero(0.0), e, "-"); :} %prec UMINUS
             
-            | expresion MAYOR expresion
-            | expresion MENOR expresion
-            | expresion MAYOR_IGUAL expresion
-            | expresion MENOR_IGUAL expresion
-            | expresion IGUALDAD expresion
-            | expresion DIFERENTE expresion
+            | expresion:i MAYOR expresion:d {: RESULT = new Expresion.OperacionRelacional(i, d, ">"); :}
+            | expresion:i MENOR expresion:d {: RESULT = new Expresion.OperacionRelacional(i, d, "<"); :}
+            | expresion:i MAYOR_IGUAL expresion:d {: RESULT = new Expresion.OperacionRelacional(i, d, ">="); :}
+            | expresion:i MENOR_IGUAL expresion:d {: RESULT = new Expresion.OperacionRelacional(i, d, "<="); :}
+            | expresion:i IGUALDAD expresion:d {: RESULT = new Expresion.OperacionRelacional(i, d, "=="); :}
+            | expresion:i DIFERENTE expresion:d {: RESULT = new Expresion.OperacionRelacional(i, d, "!="); :}
             
-            | expresion AND expresion
-            | expresion OR expresion
-            | NOT expresion
+            | expresion:i AND expresion:d {: RESULT = new Expresion.OperacionLogica(i, d, "AND"); :}
+            | expresion:i OR expresion:d {: RESULT = new Expresion.OperacionLogica(i, d, "OR"); :}
+            | NOT expresion:e {: RESULT = new Expresion.OperacionLogica(null, e, "NOT"); :}
             
-            | PAR_IZQ expresion PAR_DER
-            | NUMBER
-            | IDENTIFICADOR
-            | cadena_armada
-            | COMODIN
-            | WHO_IS_THAT_POKEMON PAR_IZQ expresion COMA expresion PAR_DER
+            | PAR_IZQ expresion:e PAR_DER {: RESULT = e; :}
+            | NUMBER:n {: RESULT = new Expresion.Numero(Double.parseDouble(n)); :}
+            | IDENTIFICADOR:id {: RESULT = new Expresion.Identificador(id); :}
+            | cadena_armada:c {: RESULT = new Expresion.Cadena(c); :}
+            | COMODIN {: RESULT = new Expresion.Comodin(); :}
+            | WHO_IS_THAT_POKEMON PAR_IZQ expresion:i COMA expresion:f PAR_DER {: RESULT = new Expresion.LlamadaPokeApi(i, f); :}
             ;
 
-estructura_control ::= if_stmt
-                     | while_stmt
-                     | do_while_stmt
-                     | for_stmt
+estructura_control ::= if_stmt:i {: RESULT = i; :}
+                     | while_stmt:w {: RESULT = w; :}
+                     | do_while_stmt:d {: RESULT = d; :}
+                     | for_stmt:f {: RESULT = f; :}
                      ;
 
-bloque_instrucciones ::= LLA_IZQ lista_instrucciones LLA_DER 
-                       | LLA_IZQ LLA_DER
+bloque_instrucciones ::= LLA_IZQ lista_instrucciones:l LLA_DER {: RESULT = l; :}
+                       | LLA_IZQ LLA_DER {: RESULT = new ArrayList<>(); :}
                        ;
 
-if_stmt ::= IF PAR_IZQ expresion PAR_DER bloque_instrucciones
-          | IF PAR_IZQ expresion PAR_DER bloque_instrucciones ELSE bloque_instrucciones
-          | IF PAR_IZQ expresion PAR_DER bloque_instrucciones ELSE if_stmt
+if_stmt ::= IF PAR_IZQ expresion:cond PAR_DER bloque_instrucciones:b_if 
+            {: RESULT = new Instruccion.EstructuraIf(cond, b_if, null); :}
+          | IF PAR_IZQ expresion:cond PAR_DER bloque_instrucciones:b_if ELSE bloque_instrucciones:b_else 
+            {: RESULT = new Instruccion.EstructuraIf(cond, b_if, b_else); :}
+          | IF PAR_IZQ expresion:cond PAR_DER bloque_instrucciones:b_if ELSE if_stmt:else_if 
+            {: RESULT = new Instruccion.EstructuraIf(cond, b_if, else_if); :}
           ;
 
-while_stmt ::= WHILE PAR_IZQ expresion PAR_DER bloque_instrucciones
+while_stmt ::= WHILE PAR_IZQ expresion:cond PAR_DER bloque_instrucciones:b 
+               {: RESULT = new Instruccion.CicloWhile(cond, b); :}
              ;
 
-do_while_stmt ::= DO bloque_instrucciones WHILE PAR_IZQ expresion PAR_DER
+do_while_stmt ::= DO bloque_instrucciones:b WHILE PAR_IZQ expresion:cond PAR_DER 
+                  {: RESULT = new Instruccion.CicloDoWhile(b, cond); :}
                 ;
 
-for_stmt ::= FOR PAR_IZQ IDENTIFICADOR ASIGNACION expresion PUNTO_COMA expresion PUNTO_COMA IDENTIFICADOR ASIGNACION expresion PAR_DER bloque_instrucciones
-           | FOR PAR_IZQ IDENTIFICADOR IN NUMBER PUNTO PUNTO NUMBER PAR_DER bloque_instrucciones
+for_stmt ::= FOR PAR_IZQ IDENTIFICADOR:id ASIGNACION expresion:inicio PUNTO_COMA expresion:cond PUNTO_COMA IDENTIFICADOR ASIGNACION expresion PAR_DER bloque_instrucciones:b 
+             {: RESULT = new Instruccion.CicloFor(id, inicio, cond, b); :} // Simplificado al AST
+           | FOR PAR_IZQ IDENTIFICADOR:id IN NUMBER:n1 PUNTO PUNTO NUMBER:n2 PAR_DER bloque_instrucciones:b 
+             {: RESULT = new Instruccion.CicloFor(id, new Expresion.Numero(Double.parseDouble(n1)), new Expresion.Numero(Double.parseDouble(n2)), b); :}
            ;
 
-componente_ui ::= SECTION COR_IZQ lista_atributos COR_DER
-                | TABLE COR_IZQ lista_atributos COR_DER
-                | TEXT COR_IZQ lista_atributos COR_DER
-                | OPEN_QUESTION COR_IZQ lista_atributos COR_DER
-                | DROP_QUESTION COR_IZQ lista_atributos COR_DER
-                | SELECT_QUESTION COR_IZQ lista_atributos COR_DER
-                | MULTIPLE_QUESTION COR_IZQ lista_atributos COR_DER
+componente_ui ::= SECTION COR_IZQ lista_atributos:attr COR_DER {: RESULT = new ComponenteUI.Section(attr); :}
+                | TABLE COR_IZQ lista_atributos:attr COR_DER {: RESULT = new ComponenteUI.Table(attr); :}
+                | TEXT COR_IZQ lista_atributos:attr COR_DER {: RESULT = new ComponenteUI.Text(attr); :}
+                | OPEN_QUESTION COR_IZQ lista_atributos:attr COR_DER {: RESULT = new ComponenteUI.OpenQuestion(attr); :}
+                | DROP_QUESTION COR_IZQ lista_atributos:attr COR_DER {: RESULT = new ComponenteUI.DropQuestion(attr); :}
+                | SELECT_QUESTION COR_IZQ lista_atributos:attr COR_DER {: RESULT = new ComponenteUI.SelectQuestion(attr); :}
+                | MULTIPLE_QUESTION COR_IZQ lista_atributos:attr COR_DER {: RESULT = new ComponenteUI.MultipleQuestion(attr); :}
                 ;
 
-lista_atributos ::= lista_atributos COMA atributo
-                  | atributo
+lista_atributos ::= lista_atributos:mapa COMA atributo:atr 
+                    {: mapa.put(atr[0].toString(), atr[1]); RESULT = mapa; :}
+                  | atributo:atr 
+                    {: Map<String, Object> mapa = new HashMap<>(); mapa.put(atr[0].toString(), atr[1]); RESULT = mapa; :}
                   ;
 
-atributo ::= WIDTH DOS_PUNTOS expresion
-           | HEIGHT DOS_PUNTOS expresion
-           | POINTX DOS_PUNTOS expresion
-           | POINTY DOS_PUNTOS expresion
-           | ORIENTATION DOS_PUNTOS VERTICAL
-           | ORIENTATION DOS_PUNTOS HORIZONTAL
-           | ELEMENTS DOS_PUNTOS LLA_IZQ lista_elementos_ui LLA_DER 
-           | ELEMENTS DOS_PUNTOS LLA_IZQ LLA_DER                   
-           | STYLES COR_IZQ lista_estilos COR_DER
-           | LABEL DOS_PUNTOS expresion
-           | CONTENT DOS_PUNTOS expresion
-           | OPTIONS DOS_PUNTOS LLA_IZQ lista_opciones LLA_DER
-           | OPTIONS DOS_PUNTOS expresion                           
-           | CORRECT DOS_PUNTOS expresion
-           | CORRECT DOS_PUNTOS LLA_IZQ lista_respuestas LLA_DER
+atributo ::= WIDTH DOS_PUNTOS expresion:e {: RESULT = new Object[]{"width", e}; :}
+           | HEIGHT DOS_PUNTOS expresion:e {: RESULT = new Object[]{"height", e}; :}
+           | POINTX DOS_PUNTOS expresion:e {: RESULT = new Object[]{"pointx", e}; :}
+           | POINTY DOS_PUNTOS expresion:e {: RESULT = new Object[]{"pointy", e}; :}
+           | ORIENTATION DOS_PUNTOS VERTICAL {: RESULT = new Object[]{"orientation", "VERTICAL"}; :}
+           | ORIENTATION DOS_PUNTOS HORIZONTAL {: RESULT = new Object[]{"orientation", "HORIZONTAL"}; :}
+           | ELEMENTS DOS_PUNTOS LLA_IZQ lista_elementos_ui:l LLA_DER {: RESULT = new Object[]{"elements", l}; :}
+           | ELEMENTS DOS_PUNTOS LLA_IZQ LLA_DER {: RESULT = new Object[]{"elements", new ArrayList<>()}; :}
+           | STYLES COR_IZQ lista_estilos:s COR_DER {: RESULT = new Object[]{"styles", s}; :}
+           | LABEL DOS_PUNTOS expresion:e {: RESULT = new Object[]{"label", e}; :}
+           | CONTENT DOS_PUNTOS expresion:e {: RESULT = new Object[]{"content", e}; :}
+           | OPTIONS DOS_PUNTOS LLA_IZQ lista_opciones:o LLA_DER {: RESULT = new Object[]{"options", o}; :}
+           | OPTIONS DOS_PUNTOS expresion:e {: RESULT = new Object[]{"options", e}; :}
+           | CORRECT DOS_PUNTOS expresion:e {: RESULT = new Object[]{"correct", e}; :}
+           | CORRECT DOS_PUNTOS LLA_IZQ lista_respuestas:r LLA_DER {: RESULT = new Object[]{"correct", r}; :}
            ;
 
-lista_elementos_ui ::= lista_elementos_ui COMA componente_ui
-                     | componente_ui
+lista_elementos_ui ::= lista_elementos_ui:lista COMA componente_ui:c {: lista.add(c); RESULT = lista; :}
+                     | componente_ui:c {: List<Instruccion> l = new ArrayList<>(); l.add(c); RESULT = l; :}
                      ;
 
-lista_opciones ::= lista_opciones COMA cadena_armada
-                 | cadena_armada
+lista_opciones ::= lista_opciones:lista COMA cadena_armada:c {: lista.add(c); RESULT = lista; :}
+                 | cadena_armada:c {: List<Object> l = new ArrayList<>(); l.add(c); RESULT = l; :}
                  ;
 
-lista_respuestas ::= lista_respuestas COMA expresion
-                   | expresion
+lista_respuestas ::= lista_respuestas:lista COMA expresion:e {: lista.add(e); RESULT = lista; :}
+                   | expresion:e {: List<Object> l = new ArrayList<>(); l.add(e); RESULT = l; :}
                    ;
 
-lista_estilos ::= lista_estilos COMA atributo_estilo
-                | atributo_estilo
+lista_estilos ::= lista_estilos:mapa COMA atributo_estilo:atr {: mapa.put(atr[0].toString(), atr[1]); RESULT = mapa; :}
+                | atributo_estilo:atr {: Map<String, Object> mapa = new HashMap<>(); mapa.put(atr[0].toString(), atr[1]); RESULT = mapa; :}
                 ;
 
-atributo_estilo ::= cadena_armada DOS_PUNTOS valor_color
-                  | cadena_armada DOS_PUNTOS MONO
-                  | cadena_armada DOS_PUNTOS SANS_SERIF
-                  | cadena_armada DOS_PUNTOS CURSIVE
-                  | cadena_armada DOS_PUNTOS NUMBER
-                  | cadena_armada DOS_PUNTOS PAR_IZQ NUMBER COMA LINE COMA valor_color PAR_DER
-                  | cadena_armada DOS_PUNTOS PAR_IZQ NUMBER COMA DOTTED COMA valor_color PAR_DER
-                  | cadena_armada DOS_PUNTOS PAR_IZQ NUMBER COMA DOUBLE COMA valor_color PAR_DER
+atributo_estilo ::= cadena_armada:clave DOS_PUNTOS valor_color:v {: RESULT = new Object[]{clave, v}; :}
+                  | cadena_armada:clave DOS_PUNTOS MONO {: RESULT = new Object[]{clave, "MONO"}; :}
+                  | cadena_armada:clave DOS_PUNTOS SANS_SERIF {: RESULT = new Object[]{clave, "SANS_SERIF"}; :}
+                  | cadena_armada:clave DOS_PUNTOS CURSIVE {: RESULT = new Object[]{clave, "CURSIVE"}; :}
+                  | cadena_armada:clave DOS_PUNTOS NUMBER:n {: RESULT = new Object[]{clave, Double.parseDouble(n)}; :}
+                  | cadena_armada:clave DOS_PUNTOS PAR_IZQ NUMBER:n COMA LINE COMA valor_color:c PAR_DER {: RESULT = new Object[]{clave, "LINE-" + n + "-" + c}; :}
+                  | cadena_armada:clave DOS_PUNTOS PAR_IZQ NUMBER:n COMA DOTTED COMA valor_color:c PAR_DER {: RESULT = new Object[]{clave, "DOTTED-" + n + "-" + c}; :}
+                  | cadena_armada:clave DOS_PUNTOS PAR_IZQ NUMBER:n COMA DOUBLE COMA valor_color:c PAR_DER {: RESULT = new Object[]{clave, "DOUBLE-" + n + "-" + c}; :}
                   ;
 
-valor_color ::= COLOR_HEX | COLOR_RGB | COLOR_HSL | RED | BLUE | GREEN | PURPLE | SKY | YELLOW | BLACK | WHITE ;
+valor_color ::= COLOR_HEX:c {: RESULT = c; :} | COLOR_RGB:c {: RESULT = c; :} | COLOR_HSL:c {: RESULT = c; :} 
+              | RED {: RESULT = "RED"; :} | BLUE {: RESULT = "BLUE"; :} | GREEN {: RESULT = "GREEN"; :} 
+              | PURPLE {: RESULT = "PURPLE"; :} | SKY {: RESULT = "SKY"; :} | YELLOW {: RESULT = "YELLOW"; :} 
+              | BLACK {: RESULT = "BLACK"; :} | WHITE {: RESULT = "WHITE"; :} ;
 
-invocacion_dibujar ::= IDENTIFICADOR PUNTO DRAW PAR_IZQ PAR_DER
-                     | IDENTIFICADOR PUNTO DRAW PAR_IZQ lista_comodines PAR_DER
+invocacion_dibujar ::= IDENTIFICADOR:id PUNTO DRAW PAR_IZQ PAR_DER {: RESULT = new Instruccion.InvocacionDibujar(id, null); :}
+                     | IDENTIFICADOR:id PUNTO DRAW PAR_IZQ lista_comodines:l PAR_DER {: RESULT = new Instruccion.InvocacionDibujar(id, (List<Expresion>)(List<?>)l); :}
                      ;
 
-lista_comodines ::= lista_comodines COMA expresion
-                  | expresion
+lista_comodines ::= lista_comodines:lista COMA expresion:e {: lista.add(e); RESULT = lista; :}
+                  | expresion:e {: List<Object> l = new ArrayList<>(); l.add(e); RESULT = l; :}
                   ;

@@ -37,9 +37,10 @@ android {
 
 dependencies {
 
-    implementation(libs.androidx.core.ktx)
+    implementation("androidx.core:core-ktx:1.15.0")
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
+    implementation("com.github.vbmacher:java-cup:11b-20160615")
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

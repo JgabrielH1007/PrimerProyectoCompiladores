@@ -119,7 +119,7 @@ CAT     = "@[:^^:]" | "@[:cat:]"
 "<="                  { return symbol(sym.MENOR_IGUAL, yytext()); }
 "=="                  { return symbol(sym.IGUALDAD, yytext()); }
 "!!"                  { return symbol(sym.DIFERENTE, yytext()); }
-"!"                   { return symbol(sym.NOT, yytext()); }
+"~"                   { return symbol(sym.NOT, yytext()); }
 "&&"                  { return symbol(sym.AND, yytext()); }
 "||"                  { return symbol(sym.OR, yytext()); }
 "="                   { return symbol(sym.ASIGNACION, yytext()); }
@@ -139,7 +139,7 @@ CAT     = "@[:^^:]" | "@[:cat:]"
 "\""                  { yybegin(DENTRO_CADENA); return symbol(sym.COMILLA, yytext()); }
 
 {ID}                 { return symbol(sym.IDENTIFICADOR, yytext()); }
-{NUMERO}             { return symbol(sym.NUMBER, Double.parseDouble(yytext()));}
+{NUMERO}             { return symbol(sym.NUMBER, yytext()); }
 {COLORHEX}           { return symbol(sym.COLOR_HEX, yytext()); }
 {COLORRGB}           { return symbol(sym.COLOR_RGB, yytext()); }
 {COLORHSL}           { return symbol(sym.COLOR_HSL, yytext()); }
