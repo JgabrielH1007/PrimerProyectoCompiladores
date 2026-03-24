@@ -29,13 +29,9 @@ import java.io.StringReader
 class MainActivity : AppCompatActivity() {
 
     private lateinit var editorCodigo: EditText
-    private lateinit var btnAnalizar: Button
-    private lateinit var btnReportes: Button
+
     private lateinit var contenedorFormulario: LinearLayout
     private lateinit var abrirParaEditorLauncher: androidx.activity.result.ActivityResultLauncher<android.content.Intent>
-
-    private lateinit var abrirParaRenderLauncher: androidx.activity.result.ActivityResultLauncher<android.content.Intent>
-    private lateinit var btnContestar: Button
 
     private var ultimoReporteHtml: String = ""
     private lateinit var guardarArchivoLauncher: androidx.activity.result.ActivityResultLauncher<android.content.Intent>
@@ -46,12 +42,6 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        editorCodigo = findViewById(R.id.editorCodigo)
-        btnAnalizar = findViewById(R.id.btnAnalizar)
-        btnReportes = findViewById(R.id.btnReportes)
-        btnContestar = findViewById(R.id.btnContestar)
-        val btnGuardar = findViewById<Button>(R.id.btnGuardar)
-
         abrirParaEditorLauncher = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode == android.app.Activity.RESULT_OK) {
                 result.data?.data?.let { uri ->
@@ -60,18 +50,42 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        abrirParaRenderLauncher = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { result ->
+        guardarArchivoLauncher = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode == android.app.Activity.RESULT_OK) {
                 result.data?.data?.let { uri ->
-                    leerArchivoParaRenderizarPKM(uri)
+                    escribirArchivoFisico(uri, contenidoPendientePorGuardar)
                 }
             }
         }
+        editorCodigo = findViewById(R.id.editorCodigo)
+        contenedorFormulario = findViewById(R.id.contenedorFormulario)
 
-        val btnAbrirEnEditor = findViewById<Button>(R.id.btnAbrirEnEditor)
-        val btnAbrirYGenerarPKM = findViewById<Button>(R.id.btnAbrirYGenerarPKM)
+        val btnAbrir = findViewById<Button>(R.id.btnAbrir)
+        val btnAnalizarColorear = findViewById<Button>(R.id.btnAnalizarColorear)
+        val btnGenerar = findViewById<Button>(R.id.btnGenerar)
+        val btnGuardar = findViewById<Button>(R.id.btnGuardar)
+        val btnReportes = findViewById<Button>(R.id.btnReportes)
 
-        btnAbrirEnEditor.setOnClickListener {
+        btnReportes.setOnClickListener {
+            if (ultimoReporteHtml.isBlank()) {
+                android.widget.Toast.makeText(this, "Todo está limpio. No hay errores recientes.", android.widget.Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            val navegadorHtml = android.webkit.WebView(this).apply {
+                loadDataWithBaseURL(null, ultimoReporteHtml, "text/html", "UTF-8", null)
+            }
+
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Reporte de Análisis")
+                .setView(navegadorHtml) // Incrustamos el WebView
+                .setPositiveButton("Cerrar") { dialog, _ ->
+                    dialog.dismiss()
+                }
+                .show()
+        }
+
+        btnAbrir.setOnClickListener {
             val intent = android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT).apply {
                 addCategory(android.content.Intent.CATEGORY_OPENABLE)
                 type = "*/*"
@@ -79,248 +93,198 @@ class MainActivity : AppCompatActivity() {
             abrirParaEditorLauncher.launch(intent)
         }
 
-        btnAbrirYGenerarPKM.setOnClickListener {
-            val intent = android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT).apply {
-                addCategory(android.content.Intent.CATEGORY_OPENABLE)
-                type = "*/*"
+
+        btnAnalizarColorear.setOnClickListener {
+            val codigo = editorCodigo.text.toString()
+            if (codigo.isBlank()) return@setOnClickListener
+
+            val esPKM = codigo.trim().startsWith("###") || codigo.contains("<section=")
+
+            lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    val analizador = Analizador(codigo)
+
+                    if (esPKM) {
+                        analizador.analizarPKM()
+                        withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            if (analizador.reporteErrores.isEmpty()) {
+                                android.widget.Toast.makeText(this@MainActivity, "✅ Análisis PKM exitoso", android.widget.Toast.LENGTH_SHORT).show()
+                            } else {
+                                android.widget.Toast.makeText(this@MainActivity, "❌ Hay errores en el PKM", android.widget.Toast.LENGTH_LONG).show()
+                                ultimoReporteHtml = analizador.reporteErrores
+                            }
+                        }
+                    } else {
+                        analizador.analizarFormulario()
+                        withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            if (analizador.reporteErrores.isEmpty()) {
+                                android.widget.Toast.makeText(this@MainActivity, "✅ Análisis .form exitoso", android.widget.Toast.LENGTH_SHORT).show()
+
+                                aplicarColoresAlEditor()
+
+                            } else {
+                                android.widget.Toast.makeText(this@MainActivity, "❌ Hay errores en el .form", android.widget.Toast.LENGTH_LONG).show()
+                                ultimoReporteHtml = analizador.reporteErrores
+                            }
+                        }
+                    }
+                } catch (e: Throwable) { // ✨ EL CAMBIO MÁGICO ESTÁ AQUÍ ✨
+                    e.printStackTrace()
+                    withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        android.widget.Toast.makeText(this@MainActivity, "💥 Error atrapado: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                }
             }
-            android.widget.Toast.makeText(this, "Selecciona un archivo .pkm", android.widget.Toast.LENGTH_LONG).show()
-            abrirParaRenderLauncher.launch(intent)
+        }
+
+
+
+        btnGenerar.setOnClickListener {
+            val codigo = editorCodigo.text.toString()
+            if (codigo.isBlank()) return@setOnClickListener
+
+            val esPKM = codigo.trim().startsWith("###") || codigo.contains("<section=")
+
+            lifecycleScope.launch(Dispatchers.IO) {
+                val analizador = Analizador(codigo)
+
+                withContext(Dispatchers.Main) {
+                    contenedorFormulario.removeAllViews()
+                }
+
+                if (esPKM) {
+                    analizador.analizarPKM()
+                    withContext(Dispatchers.Main) {
+                        if (analizador.reporteErrores.isEmpty()) {
+                            val astPkm =
+                                analizador.resultadoFinal?.value as? List<com.example.compiladoresapp.uitheme.logic.NodoPKM>
+                            astPkm?.let {
+                                com.example.compiladoresapp.uitheme.logic.GeneradorFormulariosPKM(
+                                    this@MainActivity,
+                                    contenedorFormulario
+                                ).ejecutarAST(it)
+                            }
+                        } else {
+                            Toast.makeText(
+                                this@MainActivity,
+                                "❌ Errores en PKM. No se puede generar.",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                } else {
+                    analizador.analizarFormulario()
+                    withContext(Dispatchers.Main) {
+                        if (analizador.reporteErrores.isEmpty()) {
+                            analizador.astFormulario?.let {
+                                com.example.compiladoresapp.uitheme.viewModel.GeneradorDeFormularios(
+                                    this@MainActivity,
+                                    contenedorFormulario
+                                ).ejecutarAST(it)
+                            }
+                        } else {
+                            Toast.makeText(
+                                this@MainActivity,
+                                "❌ Errores en .form. No se puede generar.",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                }
+            }
         }
 
         btnGuardar.setOnClickListener {
-            val codigoEntrada = editorCodigo.text.toString()
+            val codigo = editorCodigo.text.toString()
+            if (codigo.isBlank()) return@setOnClickListener
 
-            if (codigoEntrada.isBlank()) {
-                Toast.makeText(this, "El editor está vacío", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-
-            val inputNombre = EditText(this).apply {
-                hint = "Nombre del archivo (sin extensión)"
-                setPadding(50, 40, 50, 40)
-            }
-
+            val inputNombre =
+                EditText(this).apply { hint = "Nombre del archivo"; setPadding(50, 40, 50, 40) }
             androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("Guardar Formulario")
-                .setMessage("Ingresa el nombre para tu archivo .pkm:")
+                .setTitle("Guardar Archivo PKM")
                 .setView(inputNombre)
                 .setPositiveButton("Guardar") { _, _ ->
-                    val nombreIngresado = inputNombre.text.toString().trim()
+                    val nombre = inputNombre.text.toString().trim()
+                    if (nombre.isNotEmpty()) {
+                        val nombreFinal = if (nombre.endsWith(".pkm")) nombre else "$nombre.pkm"
+                        procesarYGuardar(nombreFinal, codigo)
+                    }
+                }.show()
+        }
+    }
 
-                    if (nombreIngresado.isNotEmpty()) {
-                        val nombreFinal = if (nombreIngresado.endsWith(".pkm")) {
-                            nombreIngresado
-                        } else {
-                            "$nombreIngresado.pkm"
+    private fun aplicarColoresAlEditor() {
+        val editable = editorCodigo.text
+        if (editable == null || editable.isEmpty()) return
+
+        val codigo = editable.toString()
+
+        lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val colorVerde = android.graphics.Color.parseColor("#4CAF50")
+            val colorNaranja = android.graphics.Color.parseColor("#FF9800")
+            val colorCeleste = android.graphics.Color.parseColor("#00BCD4")
+            val colorMorado = android.graphics.Color.parseColor("#9C27B0")
+            val colorAzul = android.graphics.Color.parseColor("#2196F3")
+            val colorAmarillo = android.graphics.Color.parseColor("#FFEB3B")
+            val colorBlanco = android.graphics.Color.parseColor("#FFFFFF") // Cambiado para tu fondo blanco
+
+
+            val zonasAColorear = mutableListOf<Triple<Int, Int, Int>>()
+
+            val patrones = mapOf(
+                colorNaranja to "\"([^\"]*)\"",
+                colorCeleste to "\\b\\d+(\\.\\d+)?\\b",
+                colorMorado to "\\b(special|string|number|boolean|SECTION|TABLE|TEXT|OPEN_QUESTION|MULTIPLE_QUESTION|SELECT_QUESTION|DROP_QUESTION|elements|content|label|options|IF|ELSE|FOR|in|draw)\\b",
+                colorAzul to "[{}\\[\\]()]",
+                colorVerde to "[+\\-*/]",
+                colorAmarillo to "@\\[.*?\\]"
+            )
+
+            for ((color, regexStr) in patrones) {
+                try {
+                    val patron = java.util.regex.Pattern.compile(regexStr)
+                    val matcher = patron.matcher(codigo)
+                    while (matcher.find()) {
+                        zonasAColorear.add(Triple(color, matcher.start(), matcher.end()))
+                    }
+                } catch (e: Throwable) {
+                    e.printStackTrace()
+                }
+            }
+
+            withContext(kotlinx.coroutines.Dispatchers.Main) {
+                try {
+                    val spansViejos = editable.getSpans(0, editable.length, android.text.style.ForegroundColorSpan::class.java)
+                    for (span in spansViejos) {
+                        editable.removeSpan(span)
+                    }
+
+                    editable.setSpan(
+                        android.text.style.ForegroundColorSpan(android.graphics.Color.BLACK),
+                        0, editable.length, android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                    )
+
+                    for ((color, inicio, fin) in zonasAColorear) {
+                        if (inicio >= 0 && fin <= editable.length) {
+                            editable.setSpan(
+                                android.text.style.ForegroundColorSpan(color),
+                                inicio, fin,
+                                android.text.Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                            )
                         }
-
-                        procesarYGuardar(nombreFinal, codigoEntrada)
-                    } else {
-                        Toast.makeText(this, "Debes ingresar un nombre válido", Toast.LENGTH_SHORT).show()
                     }
-                }
-                .setNegativeButton("Cancelar", null)
-                .show()
-        }
-
-        guardarArchivoLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            if (result.resultCode == android.app.Activity.RESULT_OK) {
-                result.data?.data?.let { uri ->
-                    escribirContenidoEnUri(uri, contenidoPendientePorGuardar)
-                }
-            }
-        }
-
-        btnAnalizar.setOnClickListener {
-            val codigoEntrada = editorCodigo.text.toString()
-
-            if (codigoEntrada.isBlank()) {
-                Toast.makeText(this, "El editor está vacío", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-
-            Toast.makeText(this, "Analizando...", Toast.LENGTH_SHORT).show()
-
-            lifecycleScope.launch(Dispatchers.IO) {
-
-                val analizador = Analizador(codigoEntrada)
-
-                analizador.analizarFormulario()
-
-                withContext(Dispatchers.Main) {
-                    val contenedor = findViewById<LinearLayout>(R.id.contenedorFormulario)
-
-                    if (analizador.reporteErrores.isEmpty()) {
-
-                        analizador.astFormulario?.let { arbol ->
-                            Toast.makeText(this@MainActivity, "Listo con ${arbol.size} instrucciones", Toast.LENGTH_SHORT).show()
-
-                            try {
-                                contenedor.removeAllViews()
-
-                                val generador = GeneradorDeFormularios(this@MainActivity, contenedor)
-                                generador.ejecutarAST(arbol)
-
-                            } catch (e: Exception) {
-                                Toast.makeText(this@MainActivity, "Error al dibujar: ${e.message}", Toast.LENGTH_LONG).show()
-                                e.printStackTrace()
-                            }
-
-                        } ?: run {
-                            Toast.makeText(this@MainActivity, " El análisis fue exitoso, pero el árbol llegó vacío (Null)", Toast.LENGTH_LONG).show()
-                        }
-
-                    } else {
-                        Toast.makeText(this@MainActivity, "Hay errores léxicos o sintácticos.", Toast.LENGTH_LONG).show()
-                        contenedor.removeAllViews()
-                        ultimoReporteHtml = analizador.reporteErrores
-                    }
-                }
-            }
-        }
-        btnReportes.setOnClickListener {
-            if (ultimoReporteHtml.isNotEmpty()) {
-
-                val webView = WebView(this)
-                webView.loadDataWithBaseURL(null, ultimoReporteHtml, "text/html", "UTF-8", null)
-
-                android.app.AlertDialog.Builder(this)
-                    .setTitle("Reporte de Análisis")
-                    .setView(webView)
-                    .setPositiveButton("Cerrar") { dialog, _ ->
-                        dialog.dismiss()
-                    }
-                    .show()
-
-            } else {
-                Toast.makeText(this, "Primero debes analizar un código para ver el reporte o no hay errores.", Toast.LENGTH_LONG).show()
-            }
-        }
-        btnContestar.setOnClickListener {
-
-            Toast.makeText(this, "Recolectando respuestas...", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun escribirContenidoEnUri(uri: Uri, contenido: String) {
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                contentResolver.openOutputStream(uri)?.use { outputStream ->
-                    outputStream.write(contenido.toByteArray())
-                }
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "Archivo guardado exitosamente", Toast.LENGTH_SHORT).show()
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "Error al guardar el archivo", Toast.LENGTH_SHORT).show()
+                } catch (e: Throwable) {
+                    e.printStackTrace()
                 }
             }
         }
     }
 
-
-
-    private fun leerArchivoParaEditor(uri: android.net.Uri) {
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                val inputStream = contentResolver.openInputStream(uri)
-                val texto = inputStream?.bufferedReader().use { it?.readText() } ?: ""
-
-                withContext(Dispatchers.Main) {
-                    editorCodigo.setText(texto)
-                    Toast.makeText(this@MainActivity, "Archivo cargado en el editor", Toast.LENGTH_SHORT).show()
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "Error al leer el archivo", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-    }
-    private fun leerArchivoParaRenderizarPKM(uri: android.net.Uri) {
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                val inputStream = contentResolver.openInputStream(uri)
-                val contenidoPkm = inputStream?.bufferedReader().use { it?.readText() } ?: ""
-
-                withContext(Dispatchers.Main) {
-                    if (!contenidoPkm.contains("<section=") && !contenidoPkm.contains("###")) {
-                        android.widget.Toast.makeText(this@MainActivity, "El archivo seleccionado no parece ser un .pkm válido.", android.widget.Toast.LENGTH_LONG).show()
-                        return@withContext
-                    }
-
-                    android.widget.Toast.makeText(this@MainActivity, "Analizando PKM...", android.widget.Toast.LENGTH_SHORT).show()
-
-                    try {
-
-                        val stringReader = java.io.StringReader(contenidoPkm)
-
-                        val lexerPkm = com.example.compiladoresapp.uitheme.logic.LexerPKM(stringReader)
-                        val parserPkm = com.example.compiladoresapp.uitheme.logic.ParserPKM(lexerPkm)
-
-                        val resultadoParseo = parserPkm.parse()
-
-
-                        val erroresLexicos = lexerPkm.errores
-                        val erroresSintacticos = parserPkm.erroresSintacticos
-
-                        val archivoManipulado = erroresLexicos.isNotEmpty() || erroresSintacticos.isNotEmpty()
-
-                        if (archivoManipulado) {
-                            android.widget.Toast.makeText(
-                                this@MainActivity,
-                                " Error: El archivo .pkm ha sido manipulado a mano y es inválido.",
-                                android.widget.Toast.LENGTH_LONG
-                            ).show()
-                        } else {
-                            android.widget.Toast.makeText(
-                                this@MainActivity,
-                                " PKM verificado intacto. Generando interfaz...",
-                                android.widget.Toast.LENGTH_SHORT
-                            ).show()
-
-                            contenedorFormulario.removeAllViews()
-
-                            val astPkm = resultadoParseo.value as? List<NodoPKM>
-
-                            if (astPkm != null) {
-                                val generadorPkmVisual = GeneradorFormulariosPKM(this@MainActivity, contenedorFormulario)
-                                generadorPkmVisual.ejecutarAST(astPkm)
-                            } else {
-                                android.widget.Toast.makeText(this@MainActivity, "El archivo está vacío.", android.widget.Toast.LENGTH_SHORT).show()
-                            }
-                        }
-
-                    } catch (e: Exception) {
-                        android.widget.Toast.makeText(
-                            this@MainActivity,
-                            "Error sintáctico crítico: Archivo PKM corrupto.",
-                            android.widget.Toast.LENGTH_LONG
-                        ).show()
-                        e.printStackTrace()
-                    }
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-                withContext(Dispatchers.Main) {
-                    android.widget.Toast.makeText(
-                        this@MainActivity,
-                        "Error crítico al intentar leer el archivo desde el teléfono",
-                        android.widget.Toast.LENGTH_SHORT
-                    ).show()
-                }
-            }
-        }
-    }
 
     private fun procesarYGuardar(nombreSugerido: String, codigoEntrada: String) {
         val esPKM = codigoEntrada.trim().startsWith("###") || codigoEntrada.contains("<section=")
 
-        lifecycleScope.launch(Dispatchers.IO) {
+        lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 var textoAFisico = ""
 
@@ -331,8 +295,10 @@ class MainActivity : AppCompatActivity() {
                     if (analizador.reporteErrores.isEmpty()) {
                         textoAFisico = codigoEntrada
                     } else {
-                        Toast.makeText(this@MainActivity, "Hay errores léxicos o sintácticos.", Toast.LENGTH_LONG).show()
-                        ultimoReporteHtml = analizador.reporteErrores
+                        withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            android.widget.Toast.makeText(this@MainActivity, "Hay errores léxicos o sintácticos.", android.widget.Toast.LENGTH_LONG).show()
+                            ultimoReporteHtml = analizador.reporteErrores
+                        }
                         return@launch
                     }
                 } else {
@@ -345,27 +311,56 @@ class MainActivity : AppCompatActivity() {
                             textoAFisico = generadorPkm.generarArchivoPKM(arbol)
                         }
                     } else {
-                        Toast.makeText(this@MainActivity, "Hay errores léxicos o sintácticos.", Toast.LENGTH_LONG).show()
-                        ultimoReporteHtml = analizador.reporteErrores
+                        withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            android.widget.Toast.makeText(this@MainActivity, "Hay errores léxicos o sintácticos.", android.widget.Toast.LENGTH_LONG).show()
+                            ultimoReporteHtml = analizador.reporteErrores
+                        }
                         return@launch
                     }
                 }
 
-                withContext(Dispatchers.Main) {
+                withContext(kotlinx.coroutines.Dispatchers.Main) {
                     contenidoPendientePorGuardar = textoAFisico
-                    val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-                        addCategory(Intent.CATEGORY_OPENABLE)
-                        type = "application/octet-stream" // O "text/plain"
-                        putExtra(Intent.EXTRA_TITLE, nombreSugerido)
+                    val intent = android.content.Intent(android.content.Intent.ACTION_CREATE_DOCUMENT).apply {
+                        addCategory(android.content.Intent.CATEGORY_OPENABLE)
+                        type = "application/octet-stream"
+                        putExtra(android.content.Intent.EXTRA_TITLE, nombreSugerido)
                     }
                     guardarArchivoLauncher.launch(intent)
                 }
 
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+                withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    android.widget.Toast.makeText(this@MainActivity, "Error: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
                 }
             }
         }
     }
+
+    private fun leerArchivoParaEditor(uri: android.net.Uri) {
+        try {
+            val inputStream = contentResolver.openInputStream(uri)
+            val texto = inputStream?.bufferedReader().use { it?.readText() } ?: ""
+            editorCodigo.setText(texto)
+            android.widget.Toast.makeText(this, "Archivo cargado", android.widget.Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            android.widget.Toast.makeText(this, "Error al leer archivo", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun escribirArchivoFisico(uri: android.net.Uri, contenido: String) {
+        try {
+            contentResolver.openOutputStream(uri)?.use { outputStream ->
+                outputStream.write(contenido.toByteArray())
+            }
+            android.widget.Toast.makeText(this, "✅ Guardado exitosamente", android.widget.Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            android.widget.Toast.makeText(this, "Error al escribir archivo", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+
+
 }

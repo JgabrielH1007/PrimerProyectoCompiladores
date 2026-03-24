@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.view.View
 import android.widget.*
+import android.widget.*
 
 class GeneradorFormulariosPKM(
     private val contexto: Context,
@@ -27,12 +28,14 @@ class GeneradorFormulariosPKM(
 
                     val layoutSeccion = LinearLayout(contexto).apply {
                         orientation = orientacionAndroid
-                        setBackgroundColor(Color.parseColor("#E0E0E0")) // Fondo por defecto
                         setPadding(20, 20, 20, 20)
-                        layoutParams = LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.MATCH_PARENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT
-                        ).apply { setMargins(0, 15, 0, 15) }
+
+                        // Si el padre es horizontal (como en una LINEA de TABLA), nos repartimos el espacio (weight = 1)
+                        layoutParams = if (vistaPadre.orientation == LinearLayout.HORIZONTAL) {
+                            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(10, 10, 10, 10) }
+                        } else {
+                            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 15, 0, 15) }
+                        }
                     }
 
                     aplicarEstilosPKM(layoutSeccion, nodo.estilos)
@@ -41,22 +44,27 @@ class GeneradorFormulariosPKM(
                 }
 
                 is NodoPKM.PreguntaAbierta -> {
+                    val contenedor = crearContenedorPregunta(vistaPadre.orientation)
+
                     val textView = TextView(contexto).apply {
                         text = procesarEmojisGraficos(nodo.etiqueta)
                         textSize = 15f
                         setTextColor(Color.BLACK)
                         setPadding(15, 15, 15, 15)
-                        setBackgroundColor(Color.parseColor("#F5F5F5"))
                     }
                     val editText = EditText(contexto).apply { hint = "Escribe tu respuesta..." }
 
-                    aplicarEstilosPKM(textView, nodo.estilos)
+                    aplicarEstilosPKM(contenedor, nodo.estilos) // El fondo va al contenedor
+                    aplicarEstilosPKM(textView, nodo.estilos)   // La fuente/color va al texto
 
-                    vistaPadre.addView(textView)
-                    vistaPadre.addView(editText)
+                    contenedor.addView(textView)
+                    contenedor.addView(editText)
+                    vistaPadre.addView(contenedor)
                 }
 
                 is NodoPKM.Desplegable -> {
+                    val contenedor = crearContenedorPregunta(vistaPadre.orientation)
+
                     val textView = TextView(contexto).apply {
                         text = procesarEmojisGraficos(nodo.etiqueta)
                         textSize = 15f
@@ -69,49 +77,71 @@ class GeneradorFormulariosPKM(
                     adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
                     spinner.adapter = adapter
 
+                    aplicarEstilosPKM(contenedor, nodo.estilos)
                     aplicarEstilosPKM(textView, nodo.estilos)
 
-                    vistaPadre.addView(textView)
-                    vistaPadre.addView(spinner)
+                    contenedor.addView(textView)
+                    contenedor.addView(spinner)
+                    vistaPadre.addView(contenedor)
                 }
 
                 is NodoPKM.Multiple -> {
+                    val contenedor = crearContenedorPregunta(vistaPadre.orientation)
+
                     val textView = TextView(contexto).apply {
                         text = procesarEmojisGraficos(nodo.etiqueta)
                         textSize = 15f
                         setTextColor(Color.BLACK)
                         setPadding(15, 15, 15, 15)
                     }
+                    aplicarEstilosPKM(contenedor, nodo.estilos)
                     aplicarEstilosPKM(textView, nodo.estilos)
-                    vistaPadre.addView(textView)
+                    contenedor.addView(textView)
 
-                    // Generamos los CheckBoxes
                     for (opcion in nodo.opciones) {
                         val checkBox = android.widget.CheckBox(contexto).apply {
                             text = opcion
                             setPadding(0, 5, 0, 5)
                         }
-                        vistaPadre.addView(checkBox)
+                        contenedor.addView(checkBox)
                     }
+                    vistaPadre.addView(contenedor)
                 }
             }
         }
     }
 
+    // =======================================================
+    // FUNCIÓN AUXILIAR: Crea una "Caja Vertical" para agrupar título y respuesta
+    // =======================================================
+    private fun crearContenedorPregunta(orientacionPadre: Int): LinearLayout {
+        return LinearLayout(contexto).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = if (orientacionPadre == LinearLayout.HORIZONTAL) {
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(10, 10, 10, 10) }
+            } else {
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 10, 0, 10) }
+            }
+        }
+    }
 
+    // =======================================================
+    // MOTOR DE ESTILOS CORREGIDO
+    // =======================================================
     private fun aplicarEstilosPKM(vista: View, estilos: Map<String, String>) {
         for ((clave, valor) in estilos) {
             val claveLimpia = clave.lowercase().trim()
             val valorStr = valor.uppercase().trim()
 
             when {
+                // FIX: Chequear "background" primero para que "color" no se lo robe
+                claveLimpia.contains("background") -> {
+                    vista.setBackgroundColor(parsearColor(valorStr, Color.TRANSPARENT))
+                }
                 claveLimpia.contains("color") -> {
                     if (vista is android.widget.TextView) {
                         vista.setTextColor(parsearColor(valorStr, Color.BLACK))
                     }
-                }
-                claveLimpia.contains("background") -> {
-                    vista.setBackgroundColor(parsearColor(valorStr, Color.TRANSPARENT))
                 }
                 claveLimpia.contains("font") -> {
                     if (vista is android.widget.TextView) {
@@ -131,19 +161,44 @@ class GeneradorFormulariosPKM(
         }
     }
 
+    // =======================================================
+    // PARSEADOR DE COLORES (Ahora entiende RGB y HSL)
+    // =======================================================
     private fun parsearColor(colorStr: String, default: Int): Int {
-        return when (colorStr) {
-            "RED" -> Color.RED
-            "BLUE" -> Color.BLUE
-            "GREEN" -> Color.GREEN
-            "YELLOW" -> Color.YELLOW
-            "BLACK" -> Color.BLACK
-            "WHITE" -> Color.WHITE
-            else -> {
-                if (colorStr.startsWith("#")) {
-                    try { Color.parseColor(colorStr) } catch (e: Exception) { default }
-                } else default
+        return try {
+            when {
+                colorStr == "RED" -> Color.RED
+                colorStr == "BLUE" -> Color.BLUE
+                colorStr == "GREEN" -> Color.GREEN
+                colorStr == "YELLOW" -> Color.YELLOW
+                colorStr == "BLACK" -> Color.BLACK
+                colorStr == "WHITE" -> Color.WHITE
+                colorStr == "SKY" -> Color.parseColor("#87CEEB")
+                colorStr == "PURPLE" -> Color.parseColor("#9C27B0")
+
+                colorStr.startsWith("#") -> Color.parseColor(colorStr)
+
+                // Formato RGB: (255,0,0)
+                colorStr.startsWith("(") && colorStr.endsWith(")") -> {
+                    val partes = colorStr.removeSurrounding("(", ")").split(",")
+                    Color.rgb(partes[0].trim().toInt(), partes[1].trim().toInt(), partes[2].trim().toInt())
+                }
+
+                // Formato HSL: <45,100,50> (Android usa HSV, hacemos una conversión rápida)
+                colorStr.startsWith("<") && colorStr.endsWith(">") -> {
+                    val partes = colorStr.removeSurrounding("<", ">").split(",")
+                    val h = partes[0].trim().toFloat()
+                    val s = partes[1].trim().toFloat() / 100f
+                    val l = partes[2].trim().toFloat() / 100f
+
+                    val v = l + s * Math.min(l, 1 - l)
+                    val sHsv = if (v == 0f) 0f else 2 * (1 - l / v)
+                    Color.HSVToColor(floatArrayOf(h, sHsv, v))
+                }
+                else -> default
             }
+        } catch (e: Exception) {
+            default
         }
     }
 

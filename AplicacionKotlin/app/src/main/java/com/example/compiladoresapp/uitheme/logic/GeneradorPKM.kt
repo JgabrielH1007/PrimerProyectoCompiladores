@@ -89,13 +89,15 @@ class GeneradorPKM(private val entorno: MutableMap<String, Any?>) {
     }
 
     private fun escribirComponentePKM(comp: Instruccion.ComponenteUI): String {
+        val estilosStr = generarEstilos(comp.atributos["styles"])
+
         return when (comp) {
             is Instruccion.ComponenteUI.Section -> {
                 totalSecciones++
                 val ori = comp.atributos["orientation"]?.toString() ?: "VERTICAL"
                 buildString {
                     append("<section=0,0,0,0,$ori>\n")
-                    append(generarEstilos(comp.atributos["styles"]))
+                    append(estilosStr) // Aquí se insertan los estilos de la sección
                     append("<content>\n")
                     val elementos = comp.atributos["elements"] as? List<Instruccion> ?: emptyList()
                     append(generarBloque(elementos))
@@ -106,12 +108,16 @@ class GeneradorPKM(private val entorno: MutableMap<String, Any?>) {
             is Instruccion.ComponenteUI.Table -> {
                 buildString {
                     append("<table>\n")
-                    append(generarEstilos(comp.atributos["styles"]))
+                    append(estilosStr)
                     append("<content>\n")
                     val elementos = comp.atributos["elements"] as? List<Instruccion> ?: emptyList()
-                    append("<line>\n<element>\n")
-                    append(generarBloque(elementos))
-                    append("</element>\n</line>\n")
+
+                    for (elem in elementos) {
+                        append("<line>\n<element>\n")
+                        append(generarBloque(listOf(elem)))
+                        append("</element>\n</line>\n")
+                    }
+
                     append("</content>\n</table>\n")
                 }
             }
@@ -119,44 +125,60 @@ class GeneradorPKM(private val entorno: MutableMap<String, Any?>) {
             is Instruccion.ComponenteUI.Text -> {
                 totalPreguntas++; totalAbiertas++
                 val txt = obtenerTexto("content", comp.atributos)
-                "<open=0,0,\"$txt\"/>\n"
+                if (estilosStr.isNotEmpty()) "<open=0,0,\"$txt\">\n$estilosStr</open>\n"
+                else "<open=0,0,\"$txt\"/>\n"
             }
 
             is Instruccion.ComponenteUI.OpenQuestion -> {
                 totalPreguntas++; totalAbiertas++
                 val lbl = obtenerTexto("label", comp.atributos)
-                "<open=0,0,\"$lbl\"/>\n"
+                if (estilosStr.isNotEmpty()) "<open=0,0,\"$lbl\">\n$estilosStr</open>\n"
+                else "<open=0,0,\"$lbl\"/>\n"
             }
 
             is Instruccion.ComponenteUI.MultipleQuestion -> {
                 totalPreguntas++; totalMultiples++
                 val lbl = obtenerTexto("label", comp.atributos)
                 val opc = obtenerListaOpciones("options", comp.atributos)
-                "<multiple=0,0,\"$lbl\",{$opc},{}>\n"
+                if (estilosStr.isNotEmpty()) "<multiple=0,0,\"$lbl\",{$opc},{}>\n$estilosStr</multiple>\n"
+                else "<multiple=0,0,\"$lbl\",{$opc},{}>\n"
             }
 
-            is Instruccion.ComponenteUI.SelectQuestion -> {
+            is Instruccion.ComponenteUI.DropQuestion-> {
                 totalPreguntas++; totalSeleccion++
                 val lbl = obtenerTexto("label", comp.atributos)
                 val opc = obtenerListaOpciones("options", comp.atributos)
-                "<select=0,0,\"$lbl\",{$opc},0/>\n"
+                if (estilosStr.isNotEmpty()) "<select=0,0,\"$lbl\",{$opc},0>\n$estilosStr</select>\n"
+                else "<select=0,0,\"$lbl\",{$opc},0/>\n"
             }
+
+            is Instruccion.ComponenteUI.SelectQuestion -> {
+                totalPreguntas++; totalDesplegables++
+                val lbl = obtenerTexto("label", comp.atributos)
+                val opc = obtenerListaOpciones("options", comp.atributos)
+                if (estilosStr.isNotEmpty()) "<drop=0,0,\"$lbl\",{$opc},0>\n$estilosStr</drop>\n"
+                else "<drop=0,0,\"$lbl\",{$opc},0/>\n"
+            }
+
             else -> ""
         }
     }
 
     private fun generarEstilos(estilosRaw: Any?): String {
         if (estilosRaw !is Map<*, *> || estilosRaw.isEmpty()) return ""
+
         return buildString {
             append("<style>\n")
             for ((clave, valor) in estilosRaw) {
-                val cl = clave.toString().replace("\"", "").lowercase()
-                val vl = valor.toString().replace("\"", "")
+                val cl = clave.toString().replace("\"", "").trim().lowercase()
+
+                val vl = valor.toString().replace("\"", "").replace(" ", "")
+
                 when {
-                    cl.contains("color") -> append("<color=$vl/>\n")
-                    cl.contains("background") -> append("<background color=$vl/>\n")
-                    cl.contains("font") -> append("<font family=$vl/>\n")
-                    cl.contains("size") -> append("<text size=$vl/>\n")
+                    cl.contains("background") || cl.contains("fondo") -> append("<background color=$vl/>\n")
+                    cl.contains("color") || cl.contains("texto") -> append("<color=$vl/>\n")
+                    cl.contains("font") || cl.contains("fuente") -> append("<font family=$vl/>\n")
+                    cl.contains("size") || cl.contains("tamaño") -> append("<text size=$vl/>\n")
                 }
             }
             append("</style>\n")
@@ -180,25 +202,34 @@ class GeneradorPKM(private val entorno: MutableMap<String, Any?>) {
             is Expresion.Cadena -> expr.valor
             is Expresion.Identificador -> entorno[expr.nombre] ?: 0.0
             is Expresion.OperacionAritmetica -> {
-                val vI = evaluarExp(expr.izq) as Double
-                val vD = evaluarExp(expr.der) as Double
+                val vI = (evaluarExp(expr.izq!!) as Number).toDouble()
+                val vD = (evaluarExp(expr.der!!) as Number).toDouble()
                 when (expr.operador) {
                     "+" -> vI + vD; "-" -> vI - vD; "*" -> vI * vD; "/" -> vI / vD; else -> 0.0
                 }
             }
             is Expresion.OperacionRelacional -> {
-                val vI = evaluarExp(expr.izq) as Double
-                val vD = evaluarExp(expr.der) as Double
+                val vI = (evaluarExp(expr.izq!!) as Number).toDouble()
+                val vD = (evaluarExp(expr.der!!) as Number).toDouble()
                 when (expr.operador) {
                     ">" -> vI > vD; "<" -> vI < vD; ">=" -> vI >= vD; "<=" -> vI <= vD; "==" -> vI == vD; else -> false
                 }
             }
+            is Expresion.OperacionLogica -> {
+                val vI = evaluarExp(expr.izq!!) as Boolean
+                val vD = evaluarExp(expr.der!!) as Boolean
+                when (expr.operador) {
+                    "&&" -> vI && vD
+                    "||" -> vI || vD
+                    else -> false
+                }
+            }
             is Expresion.LlamadaPokeApi -> {
-                val ini = (evaluarExp(expr.inicio) as Double).toInt()
-                val fin = (evaluarExp(expr.fin) as Double).toInt()
+                val ini = (evaluarExp(expr.inicio!!) as Number).toInt()
+                val fin = (evaluarExp(expr.fin!!) as Number).toInt()
                 obtenerPokemonesSincrono(ini, fin)
             }
-            else -> 0.0
+            else -> false
         }
     }
 
