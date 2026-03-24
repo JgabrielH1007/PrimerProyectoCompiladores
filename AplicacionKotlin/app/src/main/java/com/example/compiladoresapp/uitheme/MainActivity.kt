@@ -128,7 +128,7 @@ class MainActivity : AppCompatActivity() {
                             }
                         }
                     }
-                } catch (e: Throwable) { // ✨ EL CAMBIO MÁGICO ESTÁ AQUÍ ✨
+                } catch (e: Throwable) { 
                     e.printStackTrace()
                     withContext(kotlinx.coroutines.Dispatchers.Main) {
                         android.widget.Toast.makeText(this@MainActivity, "💥 Error atrapado: ${e.message}", android.widget.Toast.LENGTH_LONG).show()

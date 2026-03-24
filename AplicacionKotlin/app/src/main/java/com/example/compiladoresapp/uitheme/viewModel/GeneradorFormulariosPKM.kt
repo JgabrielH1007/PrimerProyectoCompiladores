@@ -30,7 +30,6 @@ class GeneradorFormulariosPKM(
                         orientation = orientacionAndroid
                         setPadding(20, 20, 20, 20)
 
-                        // Si el padre es horizontal (como en una LINEA de TABLA), nos repartimos el espacio (weight = 1)
                         layoutParams = if (vistaPadre.orientation == LinearLayout.HORIZONTAL) {
                             LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(10, 10, 10, 10) }
                         } else {
@@ -111,9 +110,6 @@ class GeneradorFormulariosPKM(
         }
     }
 
-    // =======================================================
-    // FUNCIÓN AUXILIAR: Crea una "Caja Vertical" para agrupar título y respuesta
-    // =======================================================
     private fun crearContenedorPregunta(orientacionPadre: Int): LinearLayout {
         return LinearLayout(contexto).apply {
             orientation = LinearLayout.VERTICAL
@@ -125,16 +121,12 @@ class GeneradorFormulariosPKM(
         }
     }
 
-    // =======================================================
-    // MOTOR DE ESTILOS CORREGIDO
-    // =======================================================
     private fun aplicarEstilosPKM(vista: View, estilos: Map<String, String>) {
         for ((clave, valor) in estilos) {
             val claveLimpia = clave.lowercase().trim()
             val valorStr = valor.uppercase().trim()
 
             when {
-                // FIX: Chequear "background" primero para que "color" no se lo robe
                 claveLimpia.contains("background") -> {
                     vista.setBackgroundColor(parsearColor(valorStr, Color.TRANSPARENT))
                 }
@@ -161,9 +153,6 @@ class GeneradorFormulariosPKM(
         }
     }
 
-    // =======================================================
-    // PARSEADOR DE COLORES (Ahora entiende RGB y HSL)
-    // =======================================================
     private fun parsearColor(colorStr: String, default: Int): Int {
         return try {
             when {
@@ -178,13 +167,11 @@ class GeneradorFormulariosPKM(
 
                 colorStr.startsWith("#") -> Color.parseColor(colorStr)
 
-                // Formato RGB: (255,0,0)
                 colorStr.startsWith("(") && colorStr.endsWith(")") -> {
                     val partes = colorStr.removeSurrounding("(", ")").split(",")
                     Color.rgb(partes[0].trim().toInt(), partes[1].trim().toInt(), partes[2].trim().toInt())
                 }
 
-                // Formato HSL: <45,100,50> (Android usa HSV, hacemos una conversión rápida)
                 colorStr.startsWith("<") && colorStr.endsWith(">") -> {
                     val partes = colorStr.removeSurrounding("<", ">").split(",")
                     val h = partes[0].trim().toFloat()

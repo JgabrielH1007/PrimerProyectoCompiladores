@@ -21,7 +21,6 @@ class GeneradorDeFormularios(
     private val entornoGlobal = mutableMapOf<String, Any?>()
 
     fun ejecutarAST(instrucciones: List<Instruccion>) {
-        //contenedorRaiz.removeAllViews()
         ejecutarBloque(instrucciones, entornoGlobal, contenedorRaiz)
     }
 
@@ -444,10 +443,8 @@ class GeneradorDeFormularios(
             else -> {
                 try {
                     if (colorUpper.startsWith("#")) {
-                        // Color Hexadecimal
                         Color.parseColor(colorUpper)
                     } else if (colorUpper.startsWith("(")) {
-                        // Color RGB: ( 255 , 0 , 0 ) -> Quitamos paréntesis y espacios
                         val rgb = colorUpper.replace(Regex("[() ]"), "").split(",")
                         Color.rgb(rgb[0].toInt(), rgb[1].toInt(), rgb[2].toInt())
                     } else {
